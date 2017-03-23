@@ -8,7 +8,7 @@ usage() {
     echo "  This script dump or import messages from/to AWS SQS queue."
     echo
     echo "Example:"
-    echo "   $PROGNAME dump --u https://sqs.ap-northeast-1.amazonaws.com/xxxxxxxxx/foo_dlq | $PROGNAME import --u https://sqs.ap-northeast-1.amazonaws.com/xxxxxxxxx/foo"
+    echo "   $PROGNAME dump -u https://sqs.ap-northeast-1.amazonaws.com/xxxxxxxxx/foo_dlq | $PROGNAME import -u https://sqs.ap-northeast-1.amazonaws.com/xxxxxxxxx/foo"
     echo 
     echo "Command:"
     echo "   dump    receive messages and output to stdout, then delete these messages."
