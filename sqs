@@ -1,0 +1,118 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+VERSION="1.0"
+
+usage() {
+    echo "Usage: $PROGNAME [OPTIONS] command"
+    echo "  This script dump or import messages from/to AWS SQS queue."
+    echo
+    echo "Example:"
+    echo "   $PROGNAME dump --u https://sqs.ap-northeast-1.amazonaws.com/xxxxxxxxx/foo_dlq | $PROGNAME import --u https://sqs.ap-northeast-1.amazonaws.com/xxxxxxxxx/foo"
+    echo 
+    echo "Command:"
+    echo "   dump    receive messages and output to stdout, then delete these messages."
+    echo "   import  send messages to queue from stdin"
+    echo
+    echo "Options:"
+    echo "  -h, --help"
+    echo "      --version"
+    echo "  -n, --max_number_of_messages [num] (1-10, Default: 10)"
+    echo "  -u, --queue-url [url]"
+    echo
+    exit 1
+}
+
+max_number_of_messages=10
+
+for OPT in "$@"
+do
+    case "$OPT" in
+        '-h'|'--help' )
+            usage
+            exit 1
+            ;;
+        '--version' )
+            echo $VERSION
+            exit 1
+            ;;
+        '-u'|'--queue-url' )
+            if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+                echo "$PROGNAME: option requires an argument -- $1" 1>&2
+                exit 1
+            fi
+            queue_url="$2"
+            shift 2
+            ;;
+        '-n'|'--max-number-of-messages' )
+            if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+                echo "$PROGNAME: option requires an argument -- $1" 1>&2
+                exit 1
+            fi
+            max_number_of_messages="$2"
+            shift 2
+            ;;
+        '--'|'-' )
+            shift 1
+            param+=( "$@" )
+            break
+            ;;
+        -*)
+            echo "$PROGNAME: illegal option -- '$(echo $1 | sed 's/^-*//')'" 1>&2
+            exit 1
+            ;;
+        *)
+            if [[ ! -z "$1" ]] && [[ ! "$1" =~ ^-+ ]]; then
+                #param=( ${param[@]} "$1" )
+                command+=( "$1" )
+                shift 1
+            fi
+            ;;
+    esac
+done
+
+if [ -z $command ]; then
+    echo "$PROGNAME: too few arguments" 1>&2
+    echo "Try '$PROGNAME --help' for more information." 1>&2
+    exit 1
+fi
+
+dump() {
+  msgs=$(aws sqs receive-message --max-number-of-messages $max_number_of_messages --queue-url $queue_url )
+  echo $msgs | jq .
+  entryFileName=$(mktemp)
+  echo $msgs |  jq "[.Messages[]|{Id:.MessageId, ReceiptHandle:.ReceiptHandle}]" > $entryFileName
+  if [ -s $entryFileName ]; then
+    result=$(aws sqs delete-message-batch --queue-url $queue_url --entries file://$entryFileName)
+    # TODO Error handling
+  else
+    echo "No message found" 1>&2
+  fi
+  exit 0;
+}
+
+import() {
+  entryFileName=$(mktemp)
+  jq "[.Messages[]|{Id:.MessageId, MessageBody:.Body}]" > $entryFileName
+  if [ -s $entryFileName ]; then
+    result=$(aws sqs send-message-batch --queue-url $queue_url --entries file://$entryFileName )
+    echo $result | jq .
+  else
+    echo "Nothing to import" 1>&2
+  fi
+  exit 0;
+}
+
+case $command in
+  'dump' )
+      dump
+    ;;
+  'import' )
+      import
+    ;;
+  * )
+      echo "$PROGNAME: $command is unknown command" 1>&2
+      echo "Try '$PROGNAME --help' for more information." 1>&2
+      exit 1
+    ;;
+esac
